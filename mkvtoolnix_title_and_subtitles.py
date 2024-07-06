@@ -3,8 +3,8 @@ MKV Processor Script
 
 This script processes MKV and MP4 files by keeping only specified subtitle tracks.
 It utilizes the MKVToolNix suite, specifically mkvmerge, to perform these operations.
-The script processes all MKV and MP4 files in the specified input directory and saves
-the processed files to a sub-directory within the input directory.
+The script processes all MKV and MP4 files in the specified input directories and saves
+the processed files to a sub-directory within each input directory.
 
 Classes:
     MKVProcessor: Handles processing of MKV and MP4 files.
@@ -20,17 +20,17 @@ Methods:
     remove_title_keep_english_subs(self, file_path, output_path):
         Removes the title and keeps specified subtitle tracks from an MKV file.
 
-    process_file(self, file_path):
+    process_file(self, file_path, output_dir):
         Processes an MKV or MP4 file by removing title and non-English subtitles, and saves to output directory.
 
-    process_directory(self):
+    process_directory(self, input_dir):
         Processes all MKV and MP4 files in the input directory.
 
     run(self):
-        Runs the MKVProcessor to process all files in the input directory and track execution time.
+        Runs the MKVProcessor to process all files in the input directories and track execution time.
 
 Private Methods:
-    _get_output_path(self, file_path):
+    _get_output_path(self, file_path, output_dir):
         Generates the output file path based on the input file path.
 
 Usage:
@@ -54,15 +54,14 @@ class MKVProcessor:
 
         Parameters:
         - config (dict): Configuration object containing initialization settings.
-        Requires keys: 'mkvmerge_executable', 'input_directory', 'file_extensions',
+        Requires keys: 'mkvmerge_executable', 'input_directories', 'file_extensions',
                         'subtitle_tracks', 'output_extension'.
         """
         self.MKVMERGE_EXECUTABLE = os.path.normpath(config['mkvmerge_executable'])
-        self.INPUT_DIRECTORY = os.path.normpath(config['input_directory'])
+        self.INPUT_DIRECTORIES = [os.path.normpath(d) for d in config['input_directories']]
         self.FILE_EXTENSIONS = config['file_extensions']
         self.SUBTITLE_TRACKS = config['subtitle_tracks']
         self.OUTPUT_EXTENSION = config['output_extension']
-        self.output_dir = os.path.join(self.INPUT_DIRECTORY, "processed_files")  # Output directory
         self.successful_files = []
         self.failed_files = []
 
@@ -104,39 +103,45 @@ class MKVProcessor:
             print(f"Error processing {os.path.basename(file_path)}: {e}")
             return False
 
-    def process_file(self, file_path):
+    def process_file(self, file_path, output_dir):
         """
         Process the MKV file to remove title and non-English subtitles, and save to output directory.
 
         Parameters:
         - file_path (str): Path to the input MKV file.
+        - output_dir (str): Directory to save the processed file.
         """
-        if not os.path.exists(self.output_dir):
-            os.makedirs(self.output_dir)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
 
         # Create output file path
-        output_path = os.path.join(self.output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}{self.OUTPUT_EXTENSION}")
+        output_path = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}{self.OUTPUT_EXTENSION}")
 
         # Remove non-English subtitles and save to the output directory
         if self.remove_title_keep_english_subs(file_path, output_path):
-            self.successful_files.append(os.path.basename(file_path))
+            self.successful_files.append(file_path)
         else:
-            self.failed_files.append(os.path.basename(file_path))
+            self.failed_files.append(file_path)
 
-    def process_directory(self):
+    def process_directory(self, input_dir):
         """
-        Process all EXT files in the input directory.
+        Process all MKV and MP4 files in the input directory.
+
+        Parameters:
+        - input_dir (str): Directory to process files from.
         """
         ext_files = []
         for ext in self.FILE_EXTENSIONS:
-            ext_files.extend(list(pathlib.Path(self.INPUT_DIRECTORY).glob(f'*.{ext}')))
+            ext_files.extend(list(pathlib.Path(input_dir).glob(f'*.{ext}')))
+
+        output_dir = os.path.join(input_dir, "processed_files")
 
         for ext_file in ext_files:
-            self.process_file(ext_file)
+            self.process_file(ext_file, output_dir)
 
     def run(self):
         """
-        Run the MKVProcessor to process all files in the input directory and track execution time.
+        Run the MKVProcessor to process all files in the input directories and track execution time.
         """
         # Get the start time
         start_time = datetime.now()
@@ -144,8 +149,10 @@ class MKVProcessor:
 
         # Check executables
         if self.check_executables():
-            # Process the directory
-            self.process_directory()
+            # Process each directory
+            for input_dir in self.INPUT_DIRECTORIES:
+                print(f"Working directory {input_dir}...")
+                self.process_directory(input_dir)
 
             # Print the summary of processed files
             print("\nSummary of Processed Files:")
@@ -167,26 +174,27 @@ class MKVProcessor:
         execution_time = end_time - start_time
         print(f"Total execution time: {str(execution_time)}")
 
-    def _get_output_path(self, file_path):
+    def _get_output_path(self, file_path, output_dir):
         """
         Generate the output file path based on the input file path.
 
         Parameters:
         - file_path (str): Path to the input file.
+        - output_dir (str): Directory to save the output file.
 
         Returns:
         - str: Output file path.
         """
-        return os.path.join(self.output_dir, os.path.basename(file_path) + self.OUTPUT_EXTENSION)
+        return os.path.join(output_dir, os.path.basename(file_path) + self.OUTPUT_EXTENSION)
 
 
 if __name__ == "__main__":
     # Update these paths and constants accordingly
     MKV_PROCESSOR_CONFIG = {
         'mkvmerge_executable': r"</path/to/mkvmerge.exe>",
-        'input_directory': r"</path/to/input_directory>",  # Replace with your input directory path
-        'file_extensions': ['ext_01', 'ext_02'],  # Add or remove file extensions as needed
-        'subtitle_tracks': "sub_01,sub_02",  # Subtitle tracks to keep
+        'input_directories': [r"</path/to/input_directory_01>", r"</path/to/input_directory_02>"],  # Replace with your input directory paths
+        'file_extensions': ['<ext_01>', '<ext_02>'],  # Add or remove file extensions as needed
+        'subtitle_tracks': "<sub_01,sub_02>",  # Subtitle tracks to keep
         'output_extension': "<.output_extension>",  # Output extension for processed files
     }
 
