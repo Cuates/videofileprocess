@@ -37,9 +37,9 @@ Usage:
     Modify the MKV_PROCESSOR_CONFIG constants in the main block to match your environment, then run the script.
 """
 
+import pathlib
 import subprocess
 import os
-import glob
 from datetime import datetime
 
 
@@ -129,7 +129,7 @@ class MKVProcessor:
         """
         ext_files = []
         for ext in self.FILE_EXTENSIONS:
-            ext_files.extend(glob.glob(os.path.join(self.INPUT_DIRECTORY, f"*.{ext}")))
+            ext_files.extend(list(pathlib.Path(self.INPUT_DIRECTORY).glob(f'*.{ext}')))
 
         for ext_file in ext_files:
             self.process_file(ext_file)
