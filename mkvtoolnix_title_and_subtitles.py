@@ -183,8 +183,8 @@ class MKVProcessor:
 if __name__ == "__main__":
     # Update these paths and constants accordingly
     MKV_PROCESSOR_CONFIG = {
-        'mkvmerge_executable': "</path/to/mkvmerge.exe>",
-        'input_directory': "</path/to/input_directory>",  # Replace with your input directory path
+        'mkvmerge_executable': r"</path/to/mkvmerge.exe>",
+        'input_directory': r"</path/to/input_directory>",  # Replace with your input directory path
         'file_extensions': ['ext_01', 'ext_02'],  # Add or remove file extensions as needed
         'subtitle_tracks': "sub_01,sub_02",  # Subtitle tracks to keep
         'output_extension': "<.output_extension>",  # Output extension for processed files
