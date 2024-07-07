@@ -35,6 +35,17 @@ Private Methods:
 
 Usage:
     Modify the MKV_PROCESSOR_CONFIG constants in the main block to match your environment, then run the script.
+
+    python docker_compose_manager.py
+
+Pip:
+    Make sure your pip is updated
+    python.exe -m pip3 install --upgrade pip
+
+Windows:
+    If warning on a Windows machine perform the following
+    WARNING: The scripts pip.exe, pip3.12.exe and pip3.exe are installed in 'C:\\Users\\<user_name>\\AppData\\Roaming\\Python\\Python312\\Scripts' which is not on PATH.
+    Consider adding this directory to PATH or, if you prefer to suppress this warning, use --no-warn-script-location.
 """
 
 import pathlib
@@ -42,10 +53,35 @@ import subprocess
 import os
 from datetime import datetime
 
+# ANSI color escape sequences for RGB-like colors
+def rgb_color(r, g, b, text):
+    """
+    Generate ANSI escape sequences for RGB-like color formatting in terminal output.
+
+    Parameters:
+    - r (int): Red component (0-255).
+    - g (int): Green component (0-255).
+    - b (int): Blue component (0-255).
+    - text (str): Text to be colored.
+
+    Returns:
+    - str: ANSI escape sequence for colored text.
+    """
+    return f"\033[38;2;{r};{g};{b}m{text}\033[0m"
 
 class MKVProcessor:
     """
     A class to process MKV and MP4 files by removing titles and non-English subtitles.
+    This class uses ANSI escape sequences for colored output in the terminal.
+
+    Attributes:
+    - MKVMERGE_EXECUTABLE (str): Path to the mkvmerge executable.
+    - INPUT_DIRECTORIES (list): List of directories to process files from.
+    - FILE_EXTENSIONS (list): List of file extensions to process.
+    - SUBTITLE_TRACKS (str): Subtitle tracks to keep.
+    - OUTPUT_EXTENSION (str): Output extension for processed files.
+    - successful_files (list): List of successfully processed files.
+    - failed_files (list): List of files that failed to process.
     """
 
     def __init__(self, config):
@@ -69,18 +105,22 @@ class MKVProcessor:
         """
         Check if MKVToolNix executables are found at the specified path.
 
+        Uses ANSI escape sequences for colored output.
+
         Returns:
         - bool: True if executables are found, False otherwise.
         """
         if not os.path.isfile(self.MKVMERGE_EXECUTABLE):
-            print("Error: MKVToolNix executable not found at the specified path.")
-            print(f"mkvmerge path: {self.MKVMERGE_EXECUTABLE}")
+            print(rgb_color(255, 0, 0, "Error: MKVToolNix executable not found at the specified path.")) # rgb(255, 0, 0)
+            print(rgb_color(255, 255, 0, f"mkvmerge path: {self.MKVMERGE_EXECUTABLE}")) # rgb(255, 255, 0)
             return False
         return True
 
     def remove_title_keep_english_subs(self, file_path, output_path):
         """
         Remove the title and keep specified subtitle tracks from an MKV file.
+
+        Uses ANSI escape sequences for colored output.
 
         Parameters:
         - file_path (str): Path to the input MKV file.
@@ -89,23 +129,25 @@ class MKVProcessor:
         Returns:
         - bool: True if successful, False if failed.
         """
-        print(f"Processing {os.path.basename(file_path)}...")
+        print(rgb_color(71, 111, 232, f"Processing {os.path.basename(file_path)}...")) # rgb(71, 111, 232)
 
         # Build the command to remove title and keep specified subtitle tracks
         command = [self.MKVMERGE_EXECUTABLE, "-o", output_path, "--title", "", "--subtitle-tracks", self.SUBTITLE_TRACKS, file_path]
 
         try:
             subprocess.run(command, check=True)
-            print(f"Removed title and non-English subtitles from {os.path.basename(file_path)}")
-            print(f"Saved as {os.path.basename(output_path)}")
+            print(rgb_color(0, 255, 0, f"Removed title and non-English subtitles from {os.path.basename(file_path)}")) # rgb(0, 255, 0)
+            print(rgb_color(0, 255, 0, f"Saved as {os.path.basename(output_path)}")) # rgb(0, 255, 0)
             return True
         except subprocess.CalledProcessError as e:
-            print(f"Error processing {os.path.basename(file_path)}: {e}")
+            print(rgb_color(255, 0, 0, f"Error processing {os.path.basename(file_path)}: {e}")) # rgb(255, 0, 0)
             return False
 
     def process_file(self, file_path, output_dir):
         """
         Process the MKV file to remove title and non-English subtitles, and save to output directory.
+
+        Uses ANSI escape sequences for colored output.
 
         Parameters:
         - file_path (str): Path to the input MKV file.
@@ -127,6 +169,8 @@ class MKVProcessor:
         """
         Process all MKV and MP4 files in the input directory.
 
+        Uses ANSI escape sequences for colored output.
+
         Parameters:
         - input_dir (str): Directory to process files from.
         """
@@ -142,37 +186,40 @@ class MKVProcessor:
     def run(self):
         """
         Run the MKVProcessor to process all files in the input directories and track execution time.
+
+        Uses ANSI escape sequences for colored output.
         """
         # Get the start time
         start_time = datetime.now()
-        print(f"Script started at: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(rgb_color(0, 255, 255, f"Script started at: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")) # rgb(0, 255, 255)
 
         # Check executables
         if self.check_executables():
             # Process each directory
             for input_dir in self.INPUT_DIRECTORIES:
-                print(f"Working directory {input_dir}...")
+                print(rgb_color(117, 24, 178, f"Working directory {input_dir}...")) # rgb(117, 24, 178)
                 self.process_directory(input_dir)
 
             # Print the summary of processed files
-            print("\nSummary of Processed Files:")
-            print("Successful files:")
+            print(rgb_color(255, 255, 0, "\nSummary of Processed Files:")) # rgb(255, 255, 0)
+            print(rgb_color(0, 255, 0, "Successful files:")) # rgb(0, 255, 0)
             for file in self.successful_files:
-                print(f"  - {file}")
-            print("Failed files:")
+                print(rgb_color(0, 255, 0, f"  - {file}")) # rgb(0, 255, 0)
+            print(rgb_color(255, 0, 0, "Failed files:")) # rgb(255, 0, 0)
             for file in self.failed_files:
-                print(f"  - {file}")
+                print(rgb_color(255, 0, 0, f"  - {file}")) # rgb(255, 0, 0)
 
         else:
-            print("Exiting script due to missing executables.")
+            print(rgb_color(255, 0, 0, "Exiting script due to missing executables.")) # rgb(255, 0, 0)
 
         # Get the end time
         end_time = datetime.now()
-        print(f"Script finished at: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(rgb_color(0, 255, 255, f"Script finished at: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")) # rgb(0, 255, 255)
 
         # Calculate and print the execution time
         execution_time = end_time - start_time
-        print(f"Total execution time: {str(execution_time)}")
+        print(rgb_color(201, 103, 28, f"Total execution time: {str(execution_time)}")) # rgb(201, 103, 28)
+
 
     def _get_output_path(self, file_path, output_dir):
         """
