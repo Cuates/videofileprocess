@@ -40,7 +40,7 @@ Usage:
 
 Pip:
     Make sure your pip is updated
-    python.exe -m pip3 install --upgrade pip
+    python.exe -m pip install --upgrade pip
 
 Windows:
     If warning on a Windows machine perform the following
@@ -197,7 +197,7 @@ class MKVProcessor:
         if self.check_executables():
             # Process each directory
             for input_dir in self.INPUT_DIRECTORIES:
-                print(rgb_color(117, 24, 178, f"Working directory {input_dir}...")) # rgb(117, 24, 178)
+                print(rgb_color(136, 66, 183, f"Working directory {input_dir}...")) # rgb(136, 66, 183)
                 self.process_directory(input_dir)
 
             # Print the summary of processed files
