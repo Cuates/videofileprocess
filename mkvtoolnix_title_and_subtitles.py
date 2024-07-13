@@ -200,10 +200,18 @@ class MKVProcessor:
             else:
                 # Process each directory
                 for input_dir in self.INPUT_DIRECTORIES:
-                    if input_dir.strip() in {"", ".", "./"}:
+                    # Explicitly Check for Empty String: Check if input_dir is an empty string.
+                    if input_dir.strip() == "":
                         print(rgb_color(255, 255, 0, "No directory was given.")) # rgb(255, 255, 0)
                         continue
 
+                    # Use os.curdir for Current Directory: Use os.curdir to represent the current directory instead of "." or "./".
+                    # Use os.path.normpath() to normalize paths and handle different path separators (\ vs / on Windows vs Unix-like systems).
+                    if os.path.normpath(input_dir) == os.path.normpath(os.curdir):
+                        print(rgb_color(255, 255, 0, "Current directory (. or ./) specified. Skipping.")) # rgb(255, 255, 0)
+                        continue
+
+                    # Existence Check: os.path.isdir(input_dir) checks if input_dir is a valid directory.
                     if not os.path.isdir(input_dir):
                         print(rgb_color(255, 255, 0, f"Directory does not exist: {input_dir}")) # rgb(255, 255, 0)
                         continue
