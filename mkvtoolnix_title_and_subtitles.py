@@ -195,10 +195,21 @@ class MKVProcessor:
 
         # Check executables
         if self.check_executables():
-            # Process each directory
-            for input_dir in self.INPUT_DIRECTORIES:
-                print(rgb_color(136, 66, 183, f"Working directory {input_dir}...")) # rgb(136, 66, 183)
-                self.process_directory(input_dir)
+            if not self.INPUT_DIRECTORIES:
+                print(rgb_color(255, 255, 0, "No directories provided.")) # rgb(255, 255, 0)
+            else:
+                # Process each directory
+                for input_dir in self.INPUT_DIRECTORIES:
+                    if input_dir.strip() in {"", ".", "./"}:
+                        print(rgb_color(255, 255, 0, "No directory was given.")) # rgb(255, 255, 0)
+                        continue
+
+                    if not os.path.isdir(input_dir):
+                        print(rgb_color(255, 255, 0, f"Directory does not exist: {input_dir}")) # rgb(255, 255, 0)
+                        continue
+
+                    print(rgb_color(136, 66, 183, f"Working directory {input_dir}...")) # rgb(136, 66, 183)
+                    self.process_directory(input_dir)
 
             # Print the summary of processed files
             print(rgb_color(255, 255, 0, "\nSummary of Processed Files:")) # rgb(255, 255, 0)
