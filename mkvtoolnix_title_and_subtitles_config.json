@@ -1,0 +1,7 @@
+{
+    "mkvmerge_executable": "</path/to/mkvmerge.exe>",
+    "input_directories": ["</path/to/input_directory_01>", "</path/to/input_directory_02>"],
+    "file_extensions": ["<ext_01>", "<ext_02>"],
+    "subtitle_tracks": "<sub_01,sub_02>",
+    "output_extension": "<.output_extension>"
+}
