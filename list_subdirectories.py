@@ -39,8 +39,9 @@ import sys
 import logging
 import time
 from datetime import datetime, timedelta
+from typing import List, Set
 
-def write_subdirectories(root: Path, unique_subdirs: set) -> None:
+def write_subdirectories(root: Path, unique_subdirs: Set[str]) -> None:
     """
     Add subdirectories of the given root to the set of unique subdirectories.
 
@@ -50,7 +51,7 @@ def write_subdirectories(root: Path, unique_subdirs: set) -> None:
 
     Args:
     root (Path): The root directory to search for subdirectories.
-    unique_subdirs (set): The set to store unique subdirectory paths.
+    unique_subdirs (Set[str]): The set to store unique subdirectory paths.
 
     Raises:
     PermissionError: If there's a permission issue accessing the directory.
@@ -65,7 +66,7 @@ def write_subdirectories(root: Path, unique_subdirs: set) -> None:
     except OSError as e:
         logging.error("OS error occurred processing directory %s: %s", root, str(e))
 
-def process_directory(root: Path, letters: list[str], unique_subdirs: set) -> None:
+def process_directory(root: Path, letters: List[str], unique_subdirs: Set[str]) -> None:
     """
     Process a directory if it starts with one of the given letters.
 
@@ -75,13 +76,13 @@ def process_directory(root: Path, letters: list[str], unique_subdirs: set) -> No
 
     Args:
     root (Path): The directory to process.
-    letters (list[str]): The list of starting letters to check against.
-    unique_subdirs (set): The set to store unique subdirectory paths.
+    letters (List[str]): The list of starting letters to check against.
+    unique_subdirs (Set[str]): The set to store unique subdirectory paths.
     """
     if root.is_dir() and any(root.name.lower().startswith(letter) for letter in letters):
         write_subdirectories(root, unique_subdirs)
 
-def list_subdirectories(letters: list[str], search_path: Path = Path('.'), output_file: Path = Path('subdirectory_list.txt')) -> None:
+def list_subdirectories(letters: List[str], search_path: Path = Path('.'), output_file: Path = Path('subdirectory_list.txt')) -> None:
     """
     List unique subdirectories of directories starting with the specified letters.
 
@@ -90,7 +91,7 @@ def list_subdirectories(letters: list[str], search_path: Path = Path('.'), outpu
     collects unique paths of their subdirectories, and writes them to the output file.
 
     Args:
-    letters (list[str]): The starting letters to search for in parent directory names.
+    letters (List[str]): The starting letters to search for in parent directory names.
     search_path (Path): The path to start the search from. Defaults to current directory.
     output_file (Path): The name of the file to write the results to.
 
@@ -98,7 +99,7 @@ def list_subdirectories(letters: list[str], search_path: Path = Path('.'), outpu
     OSError: For OS-related errors during file operations, including IOError and PermissionError.
     """
     letters = [letter.lower() for letter in letters]
-    unique_subdirs = set()
+    unique_subdirs: Set[str] = set()
     try:
         for root in search_path.rglob('*'):
             process_directory(root, letters, unique_subdirs)
