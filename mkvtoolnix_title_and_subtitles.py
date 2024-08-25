@@ -25,14 +25,15 @@ Notes for Windows Users:
 """
 
 import json
+import logging
 import pathlib
 import subprocess
-import logging
+from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
-from datetime import datetime
+from typing import List, Dict, Union, Any
 from tqdm import tqdm  # Progress bar
 
-def rgb_color(r, g, b, text):
+def rgb_color(r: int, g: int, b: int, text: str) -> str:
     """
     Generate ANSI escape sequences for RGB-like color formatting in terminal output.
 
@@ -47,7 +48,7 @@ def rgb_color(r, g, b, text):
     """
     return f"\033[38;2;{r};{g};{b}m{text}\033[0m"
 
-def setup_logging(script_filename, script_directory):
+def setup_logging(script_filename: str, script_directory: pathlib.Path) -> None:
     """
     Setup logging configuration with log rotation.
 
@@ -66,38 +67,35 @@ class MKVProcessor:
 
     Attributes:
         mkvmerge_executable (pathlib.Path): Path to the mkvmerge executable.
-        input_directories (list): List of directories to process files from.
-        file_extensions (list): List of file extensions to process.
+        input_directories (List[pathlib.Path]): List of directories to process files from.
+        file_extensions (List[str]): List of file extensions to process.
         subtitle_tracks (str): Subtitle tracks to keep.
         output_extension (str): Output extension for processed files.
         script_directory (pathlib.Path): Directory where the script is located.
         script_filename (str): Name of the script file used for JSON naming.
     """
 
-    def __init__(self, config):
+    def __init__(self, config: Dict[str, Union[str, List[str]]]) -> None:
         """
         Initialize the MKVProcessor with paths and settings.
 
         Parameters:
             config (dict): Configuration object containing initialization settings.
-                Requires keys: 'mkvmerge_executable', 'input_directories',
-                'file_extensions', 'subtitle_tracks', 'output_extension'.
+                          Requires keys: 'mkvmerge_executable', 'input_directories',
+                          'file_extensions', 'subtitle_tracks', 'output_extension'.
         """
-        self.mkvmerge_executable = pathlib.Path(config['mkvmerge_executable'])
-        self.input_directories = [pathlib.Path(d) for d in config['input_directories']]
-        self.file_extensions = config['file_extensions']
-        self.subtitle_tracks = config['subtitle_tracks']
-        self.output_extension = config['output_extension']
-
-        # Get the full path of the script
-        script_path = pathlib.Path(__file__).resolve()
-        self.script_directory = script_path.parent
-        self.script_filename = script_path.stem
-
+        self.mkvmerge_executable: pathlib.Path = pathlib.Path(config['mkvmerge_executable'])
+        self.input_directories: List[pathlib.Path] = [pathlib.Path(d) for d in config['input_directories']]
+        self.file_extensions: List[str] = config['file_extensions']
+        self.subtitle_tracks: str = config['subtitle_tracks']
+        self.output_extension: str = config['output_extension']
+        script_path: pathlib.Path = pathlib.Path(__file__).resolve()
+        self.script_directory: pathlib.Path = script_path.parent
+        self.script_filename: str = script_path.stem
         setup_logging(self.script_filename, self.script_directory)
 
     @staticmethod
-    def load_config(config_path):
+    def load_config(config_path: str) -> Dict[str, Union[str, List[str]]]:
         """
         Load configuration from a JSON file.
 
@@ -106,6 +104,10 @@ class MKVProcessor:
 
         Returns:
             dict: Configuration data loaded from the file.
+
+        Raises:
+            FileNotFoundError: If the configuration file is not found.
+            json.JSONDecodeError: If there's an error decoding the JSON file.
         """
         try:
             with open(config_path, 'r', encoding='utf-8') as file:
@@ -117,7 +119,7 @@ class MKVProcessor:
             logging.error("Error decoding JSON from the configuration file: %s", config_path)
             raise
 
-    def _write_or_append_to_json(self, message, is_success=True):
+    def _write_or_append_to_json(self, message: str, is_success: bool = True) -> None:
         """
         Write or append a message to a JSON file.
 
@@ -125,15 +127,14 @@ class MKVProcessor:
             message (str): A message to write or append.
             is_success (bool): True for success message, False for error message.
         """
-        file_suffix = "success" if is_success else "error"
-        filename = f"{self.script_filename}_{file_suffix}.json"
-        filepath = self.script_directory / filename
+        file_suffix: str = "success" if is_success else "error"
+        filename: str = f"{self.script_filename}_{file_suffix}.json"
+        filepath: pathlib.Path = self.script_directory / filename
+        current_time: str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        new_message: List[Dict[str, str]] = [{"timestamp": current_time, "message": str(message)}]
+        root_key: str = f"{self.script_filename}_{file_suffix}"
+        data: Dict[str, Any] = {}
 
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        new_message = [{"timestamp": current_time, "message": str(message)}]
-        root_key = f"{self.script_filename}_{file_suffix}"
-
-        data = {}
         if filepath.exists():
             try:
                 with open(filepath, 'r', encoding='utf-8') as file:
@@ -160,7 +161,7 @@ class MKVProcessor:
         except IOError as io_error:
             logging.error("Failed to write to JSON file %s: %s", filename, io_error)
 
-    def check_executables(self):
+    def check_executables(self) -> bool:
         """
         Check if MKVToolNix executables are found at the specified path.
 
@@ -174,20 +175,19 @@ class MKVProcessor:
             return False
         return True
 
-    def remove_title_keep_english_subs(self, file_path, output_path):
+    def remove_title_keep_english_subs(self, file_path: pathlib.Path, output_path: pathlib.Path) -> bool:
         """
         Remove the title and keep specified subtitle tracks from an MKV file.
 
         Parameters:
-            file_path (str): Path to the input MKV file.
-            output_path (str): Path to save the processed MKV file.
+            file_path (pathlib.Path): Path to the input MKV file.
+            output_path (pathlib.Path): Path to save the processed MKV file.
 
         Returns:
             bool: True if successful, False otherwise.
         """
         logging.info("Processing %s...", file_path.name)
-
-        command = [
+        command: List[str] = [
             str(self.mkvmerge_executable), "-o", str(output_path), "--title", "",
             "--subtitle-tracks", self.subtitle_tracks, str(file_path)
         ]
@@ -203,43 +203,43 @@ class MKVProcessor:
             self._write_or_append_to_json(f"Error processing {file_path.name}: {subproc_error}", is_success=False)
             return False
 
-    def process_file(self, file_path, output_dir):
+    def process_file(self, file_path: pathlib.Path, output_dir: pathlib.Path) -> None:
         """
         Process an MKV file to remove the title and non-English subtitles, and save it to the output directory.
 
         Parameters:
-            file_path (str): Path to the input MKV file.
-            output_dir (str): Directory to save the processed file.
+            file_path (pathlib.Path): Path to the input MKV file.
+            output_dir (pathlib.Path): Directory to save the processed file.
         """
         try:
             output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = output_dir / f"{file_path.stem}{self.output_extension}"
+            output_path: pathlib.Path = output_dir / f"{file_path.stem}{self.output_extension}"
             self.remove_title_keep_english_subs(file_path, output_path)
         except (OSError, IOError) as os_error:
             logging.error("Error processing file %s: %s", file_path, os_error)
             self._write_or_append_to_json(f"Error processing file {file_path}: {os_error}", is_success=False)
 
-    def process_directory(self, input_dir):
+    def process_directory(self, input_dir: pathlib.Path) -> None:
         """
         Process all MKV and MP4 files in the input directory.
 
         Parameters:
-            input_dir (str): Directory to process files from.
+            input_dir (pathlib.Path): Directory to process files from.
         """
         try:
-            ext_files = [file for ext in self.file_extensions for file in input_dir.glob(f'*.{ext}')]
-            output_dir = input_dir / "processed_files"
+            ext_files: List[pathlib.Path] = [file for ext in self.file_extensions for file in input_dir.glob(f'*.{ext}')]
+            output_dir: pathlib.Path = input_dir / "processed_files"
             for ext_file in tqdm(ext_files, desc=f"Processing directory {input_dir}"):
                 self.process_file(ext_file, output_dir)
         except (OSError, IOError) as os_error:
             logging.error("Error processing directory %s: %s", input_dir, os_error)
             self._write_or_append_to_json(f"Error processing directory {input_dir}: {os_error}", is_success=False)
 
-    def run(self):
+    def run(self) -> None:
         """
         Run the MKVProcessor to process all files in the input directories and track execution time.
         """
-        start_time = datetime.now()
+        start_time: datetime = datetime.now()
         logging.info("Script started at: %s", start_time.strftime('%Y-%m-%d %H:%M:%S'))
 
         if self.check_executables():
@@ -255,35 +255,33 @@ class MKVProcessor:
                         continue
                     logging.info("Working directory %s...", input_dir)
                     self.process_directory(input_dir)
-
-            logging.info("Check success and or error file(s) if any were generated")
+                logging.info("Check success and or error file(s) if any were generated")
         else:
             logging.error("Exiting script due to missing executables.")
 
-        end_time = datetime.now()
+        end_time: datetime = datetime.now()
         logging.info("Script finished at: %s", end_time.strftime('%Y-%m-%d %H:%M:%S'))
-        execution_time = end_time - start_time
+        execution_time: timedelta = end_time - start_time
         logging.info("Total execution time: %s", str(execution_time))
 
-    def _get_output_path(self, file_path, output_dir):
+    def _get_output_path(self, file_path: pathlib.Path, output_dir: pathlib.Path) -> pathlib.Path:
         """
         Generate the output file path based on the input file path.
 
         Parameters:
-            file_path (str): Path to the input file.
-            output_dir (str): Directory to save the output file.
+            file_path (pathlib.Path): Path to the input file.
+            output_dir (pathlib.Path): Directory to save the output file.
 
         Returns:
-            str: Output file path.
+            pathlib.Path: Output file path.
         """
         return output_dir / f"{file_path.stem}{self.output_extension}"
 
-
 if __name__ == "__main__":
-    CONFIG_PATH = '/path/to/mkvtoolnix_title_and_subtitles_config.json'  # Path to your configuration file
+    CONFIG_PATH: str = '/path/to/mkvtoolnix_title_and_subtitles_config.json'  # Path to your configuration file
     try:
-        CONFIG = MKVProcessor.load_config(CONFIG_PATH)
-        processor = MKVProcessor(CONFIG)
+        CONFIG: Dict[str, Union[str, List[str]]] = MKVProcessor.load_config(CONFIG_PATH)
+        processor: MKVProcessor = MKVProcessor(CONFIG)
         processor.run()
     except (FileNotFoundError, json.JSONDecodeError) as main_error:
         logging.error("An error occurred during execution: %s", main_error)
