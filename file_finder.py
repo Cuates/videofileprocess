@@ -2,7 +2,6 @@
 
 This script searches for XML (or other specified) files in a given directory
 structure and outputs the results to a JSON file. It supports:
-    - Parallel processing
     - Custom file types
     - Exclusion patterns
     - Progress indicator for large directory structures
@@ -16,24 +15,21 @@ To install required packages:
 Usage:
     python file_finder.py [--root ROOT_DIR] [--output OUTPUT_FILE]
                           [--types FILE_TYPES...] [--exclude PATTERNS...]
-                          [--parallel]
 
 Example:
     python file_finder.py --root /path/to/search --types .xml .xsd
-                          --exclude "*temp*" "*backup*" --parallel
+                          --exclude "*temp*" "*backup*"
 
 This command does the following:
     - Searches for files in /path/to/search and its subdirectories
     - Looks for files with .xml and .xsd extensions
     - Excludes any files or directories matching the patterns *temp* or *backup*
-    - Uses parallel processing for faster execution
 
 For more information, use the --help option:
     python file_finder.py --help
 """
 
 import argparse
-import concurrent.futures
 import fnmatch
 import json
 import logging
@@ -117,19 +113,6 @@ def find_xml_files(root_dir: Path, file_types: List[str], exclude_patterns: List
                 current_level['matching_files'].append(path.name)
     return result
 
-def process_directory(args: Tuple[str, List[str], List[str]]) -> Dict[str, Any]:
-    """
-    Process a single directory for matching files.
-
-    Args:
-        args (Tuple[str, List[str], List[str]]): A tuple containing (root_dir, file_types, exclude_patterns).
-
-    Returns:
-        Dict[str, Any]: A dictionary representing the directory structure and matching files.
-    """
-    root_dir, file_types, exclude_patterns = args
-    return find_xml_files(Path(root_dir), file_types, exclude_patterns)
-
 def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Find XML files and output structure to JSON.")
@@ -137,40 +120,30 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, help="Output JSON file name (default: auto-generated with timestamp)")
     parser.add_argument("--types", nargs="+", default=[".xml"], help="File types to search for (default: .xml)")
     parser.add_argument("--exclude", nargs="+", default=[], help="Patterns to exclude")
-    parser.add_argument("--parallel", action="store_true", help="Use parallel processing")
     return parser.parse_args()
 
-def search_files(root_dir: Path, file_types: List[str], exclude_patterns: List[str], use_parallel: bool) -> Dict[str, Any]:
+def search_files(root_dir: Path, file_types: List[str], exclude_patterns: List[str]) -> Tuple[Dict[str, Any], int]:
     """Search for files based on given criteria."""
-    if use_parallel:
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            futures = []
-            for path in root_dir.iterdir():
-                if path.is_dir():
-                    futures.append(executor.submit(process_directory, (str(path), file_types, exclude_patterns)))
+    results: Dict[str, Any] = {}
+    directory_count = 0
+    total_dirs = sum(1 for _ in root_dir.rglob('*') if _.is_dir())
+    with tqdm(total=total_dirs, desc="Processing directories", unit="dir") as pbar:
+        for path in root_dir.rglob('*'):
+            if path.is_dir():
+                directory_count += 1
+                dir_results = find_xml_files(path, file_types, exclude_patterns)
+                if dir_results:
+                    relative_path = path.relative_to(root_dir)
+                    current_level = results
+                    for part in relative_path.parts:
+                        if part not in current_level:
+                            current_level[part] = {}
+                        current_level = current_level[part]
+                    current_level.update(dir_results)
+                pbar.update(1)
+    return results, directory_count
 
-            results: Dict[str, Any] = {}
-            for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Processing directories", unit="dir"):
-                results.update(future.result())
-    else:
-        results: Dict[str, Any] = {}
-        total_dirs = sum(1 for _ in root_dir.rglob('*') if _.is_dir())
-        with tqdm(total=total_dirs, desc="Processing directories", unit="dir") as pbar:
-            for path in root_dir.rglob('*'):
-                if path.is_dir():
-                    dir_results = find_xml_files(path, file_types, exclude_patterns)
-                    if dir_results:
-                        relative_path = path.relative_to(root_dir)
-                        current_level = results
-                        for part in relative_path.parts:
-                            if part not in current_level:
-                                current_level[part] = {}
-                            current_level = current_level[part]
-                        current_level.update(dir_results)
-                    pbar.update(1)
-    return results
-
-def create_metadata(start_time: float, start_datetime: datetime, end_datetime: datetime, root_dir: Path, args: argparse.Namespace) -> Dict[str, Any]:
+def create_metadata(start_time: float, start_datetime: datetime, end_datetime: datetime, root_dir: Path, args: argparse.Namespace, directory_count: int) -> Dict[str, Any]:
     """Create metadata for the output."""
     execution_time = time.time() - start_time
     execution_timedelta = timedelta(seconds=execution_time)
@@ -182,7 +155,7 @@ def create_metadata(start_time: float, start_datetime: datetime, end_datetime: d
         "root_directory": str(root_dir),
         "file_types_searched": args.types,
         "exclusion_patterns": args.exclude,
-        "parallel_processing": args.parallel
+        "total_directories_processed": directory_count
     }
 
 def write_output(output: Dict[str, Any], root_dir: Path, output_file: Optional[Path]) -> None:
@@ -220,9 +193,9 @@ def main() -> None:
         # logging.info("Searching for files in: %s", root_dir)
         print(f"Searching for files in: {root_dir}")
 
-        results = search_files(root_dir, args.types, args.exclude, args.parallel)
+        results, directory_count = search_files(root_dir, args.types, args.exclude)
 
-        metadata = create_metadata(start_time, start_datetime, datetime.now(), root_dir, args)
+        metadata = create_metadata(start_time, start_datetime, datetime.now(), root_dir, args, directory_count)
         output = {"metadata": metadata, "results": results}
 
         write_output(output, root_dir, args.output)
