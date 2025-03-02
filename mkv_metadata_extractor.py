@@ -185,7 +185,7 @@ class MKVMetadataExtractor:
         """
         cmd = [str(MKVMERGE_PATH), '-J', str(file_path)]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', check=True)
             if not result.stdout:
                 raise ValueError(f"mkvmerge produced no output for file: {file_path}")
             metadata = json.loads(result.stdout)

@@ -15,7 +15,7 @@ Required packages:
 - subprocess
 
 Usage:
-    python mkv_metadata_extractor.py <root_directory>
+    python mkv_metadata_extractor_full.py <root_directory>
 
 Arguments:
     root_directory : str
@@ -27,10 +27,10 @@ Options:
 
 Examples:
     # Extract metadata from MKV files in the '/home/user/videos' directory:
-    python mkv_metadata_extractor.py /home/user/videos
+    python mkv_metadata_extractor_full.py /home/user/videos
 
     # Show help message:
-    python mkv_metadata_extractor.py --help
+    python mkv_metadata_extractor_full.py --help
 
 Output:
     The script will create a JSON file in the same directory as the script,
@@ -108,11 +108,13 @@ class FileMetadata(TypedDict):
         audios (List[TrackInfo]): List of audio track information.
         subtitles (List[TrackInfo]): List of subtitle track information.
         chapters (List[ChapterInfo]): List of chapter information.
+        error (str): Error message if metadata extraction failed.
     """
     videos: List[TrackInfo]
     audios: List[TrackInfo]
     subtitles: List[TrackInfo]
     chapters: List[ChapterInfo]
+    error: str
 
 class MKVMetadataExtractor:
     """Class for extracting metadata from MKV files using MKVMerge."""
@@ -139,11 +141,30 @@ class MKVMetadataExtractor:
                 file_metadata = self._extract_file_metadata(file_path)
                 self._add_to_results(file_path, file_metadata)
             except subprocess.CalledProcessError as e:
-                logger.error("Error occurred while processing %s: %s", file_path, str(e))
+                error_msg = f"mkvmerge command failed: {str(e)}"
+                logger.error("%s: %s", file_path, error_msg)
+                self._add_to_results(file_path, {"error": error_msg})
             except json.JSONDecodeError as e:
-                logger.error("Error decoding JSON for %s: %s", file_path, str(e))
+                error_msg = f"Error decoding JSON: {str(e)}"
+                logger.error("%s: %s", file_path, error_msg)
+                self._add_to_results(file_path, {"error": error_msg})
+            except ValueError as e:
+                error_msg = str(e)
+                logger.error("%s: %s", file_path, error_msg)
+                self._add_to_results(file_path, {"error": error_msg})
+            except PermissionError as e:
+                error_msg = f"Permission error: {str(e)}"
+                logger.error("%s: %s", file_path, error_msg)
+                self._add_to_results(file_path, {"error": error_msg})
+            except OSError as e:
+                error_msg = f"OS error: {str(e)}"
+                logger.error("%s: %s", file_path, error_msg)
+                self._add_to_results(file_path, {"error": error_msg})
             except Exception as e:
-                logger.critical("Unexpected error occurred while processing %s: %s", file_path, str(e))
+                error_msg = f"Unexpected error: {str(e)}"
+                logger.critical("%s: %s", file_path, error_msg)
+                self._add_to_results(file_path, {"error": error_msg})
+                # Re-raise the exception to allow for proper handling at a higher level
                 raise
 
     def _extract_file_metadata(self, file_path: Path) -> FileMetadata:
@@ -157,8 +178,23 @@ class MKVMetadataExtractor:
             FileMetadata: The extracted metadata for the file.
         """
         cmd = [str(MKVMERGE_PATH), '-J', str(file_path)]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        metadata = json.loads(result.stdout)
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', check=True)
+            if not result.stdout:
+                raise ValueError(f"mkvmerge produced no output for file: {file_path}")
+            metadata = json.loads(result.stdout)
+        except subprocess.CalledProcessError as e:
+            error_msg = f"mkvmerge command failed: {e}\nStderr: {e.stderr}"
+            logger.error("%s: %s", file_path, error_msg)
+            return {"error": error_msg}
+        except json.JSONDecodeError as e:
+            error_msg = f"Failed to parse mkvmerge output as JSON: {e}"
+            logger.error("%s: %s", file_path, error_msg)
+            return {"error": error_msg}
+        except ValueError as e:
+            error_msg = str(e)
+            logger.error("%s: %s", file_path, error_msg)
+            return {"error": error_msg}
 
         processed_metadata: FileMetadata = {
             "videos": [],
