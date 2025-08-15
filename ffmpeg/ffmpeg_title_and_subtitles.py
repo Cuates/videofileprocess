@@ -193,9 +193,6 @@ class VideoProcessor:
         Args:
             config_path (Path): Path to the JSON configuration file.
         """
-        # self.script_path: Path = Path(__file__).resolve()
-        # self.script_directory: Path = self.script_path.parent
-        # self.script_filename: str = self.script_path.stem
         self.meta = ScriptMeta(
             path=Path(__file__).resolve(),
             directory=Path(__file__).resolve().parent,
@@ -214,11 +211,6 @@ class VideoProcessor:
             ) from exc
 
         self.config: Dict[str, Union[str, List[str]]] = config
-        # self.input_dirs: List[Path] = [Path(d) for d in self.config.get(ConfigKey.INPUT_DIRECTORIES.value, [])]
-        # self.file_exts: List[str] = self.config.get(ConfigKey.FILE_EXTENSIONS.value, [])
-        # self.subtitle_langs: List[str] = self.config.get(ConfigKey.SUBTITLE_TRACKS.value, [])
-        # self.output_ext: str = self.config.get(ConfigKey.OUTPUT_EXTENSION.value, ".mkv")
-        # self.mode: ConversionMode = self.config.get(ConfigKey.CONVERSION_MODE.value, ConversionMode.REMUX)
         self.config_bundle = ConfigBundle(
             input_dirs=[Path(d) for d in config.get(ConfigKey.INPUT_DIRECTORIES.value, [])],
             file_exts=config.get(ConfigKey.FILE_EXTENSIONS.value, []),
@@ -655,7 +647,6 @@ class VideoProcessor:
         end_time: datetime = datetime.now()
         logging.info("Script finished at: %s", end_time.strftime('%Y-%m-%d %H:%M:%S'))
         execution_time: timedelta = end_time - start_time
-        # logging.info("Total execution time: %s", str(execution_time))
         logging.info("Total execution time: %s", self.format_time_delta(execution_time))
 
     def check_executables(self) -> bool:
