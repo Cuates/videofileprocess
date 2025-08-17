@@ -63,7 +63,7 @@ execution metadata.
     - ffprobe must be installed and accessible via the system PATH.
     - This script does not modify or move any media files.
     - Track metadata is grouped and serialized using nested dataclasses
-      to ensure lint compliance and maintainable structure.
+        to ensure lint compliance and maintainable structure.
     - If ffprobe fails on a file, the error is captured in the output.
 """
 
@@ -96,7 +96,7 @@ class TrackProperties:
     """
     codec_info: str
     specs: Dict[str, Any]
-    tags: Dict[str, str]
+    metadata: Dict[str, Any]  # disposition, codec_id, etc.
 
 @dataclass
 class TrackInfo:
@@ -104,8 +104,7 @@ class TrackInfo:
     Metadata for a single media track.
     """
     codec: str
-    track_type: str
-    tags: Dict[str, str]
+    display: Dict[str, str | bool]  # character_set, language, name, etc.
     properties: TrackProperties
 
 @dataclass
@@ -141,7 +140,6 @@ class ChapterInfo:
             dict[str, int | float | str]: Dictionary representation of the chapter.
         """
         return {
-            "id": self.id,
             "start_time": self.start_time,
             "end_time": self.end_time,
             "title": self.title
@@ -172,23 +170,32 @@ class FileMetadata:
             Returns:
                 Dict[str, Any]: A dictionary containing codec, type, tags, and technical properties.
             """
-            return {
-                "codec": track.codec,
-                "track_type": track.track_type,
-                "tags": track.tags,
-                "properties": {
-                    "codec_info": track.properties.codec_info,
-                    "specs": track.properties.specs,
-                    "tags": track.properties.tags
-                }
+            properties = {
+                **track.properties.metadata,
+                "codec_info": track.properties.codec_info,
             }
 
+            # ✅ Only include specs for audio and video
+            track_type = track.display.get("type", "")
+            if track_type in ("audio", "video"):
+                properties.update(track.properties.specs)
+
+            output = {
+                "Codec": track.codec,
+                "Default_track": track.display.get("default_track", False),
+                "Forced_display": track.display.get("forced_display", False),
+                "Language": track.display.get("language", ""),
+                "Name": track.display.get("name", ""),
+                "Properties": properties,
+                "Type": track_type
+            }
+
+            return output
+
         return {
-            "tracks": {
-                "videos": [serialize_track(t) for t in self.tracks.videos],
-                "audios": [serialize_track(t) for t in self.tracks.audios],
-                "subtitles": [serialize_track(t) for t in self.tracks.subtitles],
-            },
+            "videos": [serialize_track(t) for t in self.tracks.videos],
+            "audios": [serialize_track(t) for t in self.tracks.audios],
+            "subtitles": [serialize_track(t) for t in self.tracks.subtitles],
             "chapters": [chapter.to_dict() for chapter in self.chapters]
         }
 
@@ -252,18 +259,34 @@ class MKVMetadataExtractor:
             str(file_path)
         ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        data = json.loads(result.stdout)
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", check=True)
+        except subprocess.CalledProcessError as e:
+            logger.error("ffprobe failed for file: %s", file_path)
+            logger.error("stderr: %s", e.stderr.strip())
+            raise RuntimeError(f"ffprobe failed for {file_path}") from e
 
+        if not result.stdout:
+            logger.error("ffprobe returned no output for file: %s", file_path)
+            raise RuntimeError(f"No output from ffprobe for file: {file_path}")
+
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError as e:
+            logger.error("Failed to parse ffprobe output for file: %s", file_path)
+            logger.error("JSONDecodeError: %s", str(e))
+            logger.debug("Raw ffprobe output:\n%s", result.stdout)
+            raise
         videos, audios, subtitles = [], [], []
 
         for stream in data.get("streams", []):
             track = self._build_track_info(stream)
-            if track.track_type == "video":
+            track_type = track.display.get("type", "")
+            if track_type == "video":
                 videos.append(track)
-            elif track.track_type == "audio":
+            elif track_type == "audio":
                 audios.append(track)
-            elif track.track_type == "subtitle":
+            elif track_type == "subtitle":
                 subtitles.append(track)
 
         chapters = []
@@ -294,21 +317,44 @@ class MKVMetadataExtractor:
             TrackInfo: Structured track metadata.
         """
         raw_tags = stream.get("tags", {})
-        normalized_tags = self._parse_track_tags(raw_tags)
 
-        # Ensure 'language' and 'title' are present in raw_tags for properties
-        raw_tags_with_defaults = dict(raw_tags)  # shallow copy
+        raw_tags_with_defaults = dict(raw_tags)
         raw_tags_with_defaults["language"] = raw_tags.get("language", "und") or "und"
         raw_tags_with_defaults["title"] = raw_tags.get("title", "") or ""
 
+        disposition = stream.get("disposition", {})
+
+        metadata = {
+            "default_track": disposition.get("default", 0) == 1,
+            "enabled_track": disposition.get("enabled", 1) == 1,
+            "forced_track": disposition.get("forced", 0) == 1,
+            "language": raw_tags.get("language", "und"),
+            "number": stream.get("index", -1),
+            "tag_duration": raw_tags.get("DURATION", ""),
+            "track_name": raw_tags.get("title", "")
+        }
+
+        if stream.get("codec_type") == "subtitle":
+            encoding = raw_tags.get("ENCODING")
+            if encoding:
+                metadata["encoding"] = encoding
+            metadata["text_subtitles"] = True
+
+        display = {
+            "default_track": metadata["default_track"],
+            "forced_display": metadata["forced_track"],
+            "language": metadata["language"],
+            "name": metadata["track_name"],
+            "type": stream.get("codec_type", "unknown")
+        }
+
         return TrackInfo(
             codec=stream.get("codec_name", "unknown"),
-            track_type=stream.get("codec_type", "unknown"),
-            tags=normalized_tags,
+            display=display,
             properties=TrackProperties(
-                codec_info=stream.get("codec_long_name"),
+                codec_info=stream.get("codec_long_name", ""),
                 specs=self._parse_track_specs(stream),
-                tags=raw_tags_with_defaults
+                metadata=metadata
             )
         )
 
@@ -345,9 +391,21 @@ class MKVMetadataExtractor:
             if width and height:
                 specs["resolution"] = self._format_resolution(width, height)
             specs["frame_rate"] = stream.get("r_frame_rate")
+
+            # ✅ Add display_dimensions from tags if available
+            tags = stream.get("tags", {})
+            display_dims = tags.get("DISPLAYDIMENSIONS")
+            pixel_dims = tags.get("PIXELDIMENSIONS")
+
+            if display_dims:
+                specs["display_dimensions"] = display_dims
+            if pixel_dims:
+                specs["pixel_dimensions"] = pixel_dims
+
         elif stream.get("codec_type") == "audio":
             specs["channels"] = stream.get("channels")
             specs["sample_rate"] = stream.get("sample_rate")
+
         return specs
 
     def _format_resolution(self, width: int, height: int) -> str:
@@ -462,7 +520,7 @@ def check_executables() -> Tuple[bool, str]:
 
     Returns:
         Tuple[bool, str]: A tuple where the first element is True if all tools are available,
-                          and the second is an error message or empty string.
+                        and the second is an error message or empty string.
     """
     required_tools = ["ffmpeg", "ffprobe"]
     missing_tools = []
@@ -528,7 +586,7 @@ def main() -> None:
             "execution_time_formatted": execution_time_formatted,
             "root_directory": str(root_dir)
         },
-        "results": {str(path): metadata.to_dict() for path, metadata in extractor.results.items()}
+        "results": {path.name: metadata.to_dict() for path, metadata in extractor.results.items()}
     }
 
     sorted_output = sort_dict(output)
