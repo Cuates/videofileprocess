@@ -448,8 +448,8 @@ class VideoProcessor:
 
         cmd += ["-i", str(video_file)]
 
-        # ✅ Stream mapping
-        cmd += ["-map", "0:v", "-map", "0:a"]
+        # ✅ Stream mapping, with actual video stream (no cover art attachment as video stream included), and optional attachments as the script will error out if there are no attachments present
+        cmd += ["-map", "0:V", "-map", "0:a", "-map", "0:t?"]
         for sub_map in subtitle_maps:
             cmd += ["-map", sub_map]
 
