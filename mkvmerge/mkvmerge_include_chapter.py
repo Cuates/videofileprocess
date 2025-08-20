@@ -35,7 +35,7 @@ from alive_progress import alive_it
 
 # 🔧 Paths and binaries
 SCRIPT_DIR: Path = Path(__file__).resolve().parent
-ROOT_DIR: Path = Path("/path/to/root")  # ← Replace with your actual root folder
+ROOT_DIR: Path = Path("/path/to/root")  # ← Replace with your actual media root
 MKVMERGE_BIN: str = os.getenv("MKVMERGE_BIN", "mkvmerge")
 
 # 📝 Audit log path
@@ -231,10 +231,13 @@ def mux_chapters_with_mkvmerge(mkv_path: Path, chapter_path: Path) -> None:
     except subprocess.CalledProcessError as exc:
         if temp_output.exists():
             temp_output.unlink()
+
+        error_msg = exc.stderr.strip() or exc.stdout.strip() or "No error message returned by mkvmerge"
+
         append_audit({
             "file": str(mkv_path),
             "status": "mkvmerge_failed",
-            "error": exc.stderr.strip()
+            "error": error_msg
         }, time.time() - start)
 
 def print_summary() -> None:
@@ -261,24 +264,24 @@ def print_summary() -> None:
     if muxed:
         print("\n✅ Files Successfully Muxed:")
         for e in muxed:
-            print(f" - {e['file']} (Duration: {e['duration_human']})")
+            print(f" - {e['file']} (Duration => {e['duration_human']})")
 
     if failed:
         print("\n🔍 Files that Failed:")
         for e in failed:
             reason = e.get("error", "unknown error")
-            print(f" - {e['file']} (Reason: {reason}, Duration: {e['duration_human']})")
+            print(f" - {e['file']} (Reason => {reason}, Duration => {e['duration_human']})")
 
     if invalid:
         print("\n🧪 Invalid Chapter Files:")
         for e in invalid:
             reason = e.get("reason", e.get("error", "unknown issue"))
-            print(f" - {e['file']} (Reason: {reason}, Duration: {e['duration_human']})")
+            print(f" - {e['file']} (Reason => {reason}, Duration => {e['duration_human']})")
 
     # if skipped:
     #     print("\n⚠️ Skipped Files:")
     #     for e in skipped:
-    #         print(f" - {e['file']} (Reason: {e['reason']}, Duration: {e['duration_human']})")
+    #         print(f" - {e['file']} (Reason => {e['reason']}, Duration => {e['duration_human']})")
 
 def main() -> None:
     """Main entry point. Tracks execution time and prints summary."""
