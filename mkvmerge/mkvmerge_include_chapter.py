@@ -12,6 +12,12 @@ Features:
 - Finalizes execution metadata with end time, total duration, and summary counts
 - Displays real-time progress and prints a summary report
 
+Requirements:
+- Python 3.8+
+- Install progress bar dependency: `pip install alive-progress`
+- Install MKVToolNix (https://mkvtoolnix.download/) and ensure `mkvmerge` is available in your system PATH
+    or set the environment variable `MKVMERGE_BIN` to its full path
+
 Designed for forensic-grade traceability, operational safety, and human-readable auditability.
 """
 
