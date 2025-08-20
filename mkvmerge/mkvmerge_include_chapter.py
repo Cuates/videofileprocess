@@ -31,6 +31,7 @@ from typing import Generator, Tuple, List, Dict, Any
 from datetime import datetime, timezone, timedelta
 from xml.etree import ElementTree as ET
 from xml.etree.ElementTree import ParseError
+import shutil
 from alive_progress import alive_it
 
 # 🔧 Paths and binaries
@@ -285,6 +286,10 @@ def print_summary() -> None:
 
 def main() -> None:
     """Main entry point. Tracks execution time and prints summary."""
+    if shutil.which(MKVMERGE_BIN) is None:
+        print(f"🚫 mkvmerge not found at '{MKVMERGE_BIN}'. Check your PATH or set MKVMERGE_BIN.")
+        sys.exit(1)
+
     start_time: datetime = datetime.now(timezone.utc)
     initialize_log(start_time)
 
