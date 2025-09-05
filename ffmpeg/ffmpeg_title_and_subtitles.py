@@ -76,6 +76,19 @@ class EncoderType(Enum):
     H264_NVENC = "h264_nvenc"
     HEVC_NVENC = "hevc_nvenc"
 
+class PixelFormat(Enum):
+    """
+    Enum representing common pixel formats.
+
+    Options:
+        YUV420P: Standard 8-bit 4:2:0 planar YUV.
+        YUV420P10LE: 10-bit 4:2:0 planar YUV, little-endian.
+        P010LE: 10-bit 4:2:0 NVENC-compatible pixel format, little-endian.
+    """
+    YUV420P = "yuv420p"
+    YUV420P10LE = "yuv420p10le"
+    P010LE = "p010le"
+
 class PresetLibxSpeed(Enum):
     """
     Enum representing libx264 preset speeds and compression tradeoffs.
@@ -415,6 +428,68 @@ class VideoProcessor:
         title = ''
         return ["-metadata", f"title={title}"]
 
+    def _build_remux_codec_flags(self, mode_config: dict) -> List[str]:
+        """
+        Generates FFmpeg codec flags for remuxing mode based on configuration.
+
+        This method constructs stream copy directives for video, audio, and subtitle streams,
+        using values from the provided configuration. If no explicit codec is defined, it defaults
+    to 'copy', preserving the original encoding without reprocessing.
+
+        Args:
+            mode_config (dict): Dictionary containing codec preferences for remuxing.
+
+        Returns:
+            List[str]: A list of FFmpeg flags for stream copy operations.
+        """
+        return [
+            "-c:v", mode_config.get(ConfigKey.VIDEO_CODEC.value, "copy"),
+            "-c:a", mode_config.get(ConfigKey.AUDIO_CODEC.value, "copy"),
+            "-c:s", mode_config.get(ConfigKey.SUBTITLE_CODEC.value, "copy")
+        ]
+
+    def _build_reencode_codec_flags(self, video_file: Path, mode_config: dict) -> List[str]:
+        """
+        Constructs FFmpeg codec flags for reencoding mode based on configuration and input file characteristics.
+
+        This method selects the appropriate video codec (GPU or CPU), preset, and quality parameters (CRF or bitrate)
+        depending on the encoder type. It also appends audio and subtitle codec flags. If bitrate is not explicitly
+        defined for GPU encoding, it is dynamically resolved based on the input video's height.
+
+        Args:
+            video_file (Path): Path to the input video file, used for bitrate resolution if needed.
+            mode_config (dict): Dictionary containing codec configuration values such as video/audio/subtitle codec,
+                                preset, CRF, and bitrate.
+
+        Returns:
+            List[str]: A list of FFmpeg command-line flags for codec configuration.
+
+        Logs:
+            Logs the selected video codec and dynamically resolved bitrate if applicable.
+        """
+        flags = []
+        video_codec = EncoderType.HEVC_NVENC.value if self.use_gpu else mode_config.get(ConfigKey.VIDEO_CODEC.value, EncoderType.LIBX265.value)
+        preset = self.resolve_preset(video_codec, mode_config.get(ConfigKey.PRESET.value, PresetLibxSpeed.MEDIUM.value))
+        audio_codec = mode_config.get(ConfigKey.AUDIO_CODEC.value, "copy")
+        subtitle_codec = mode_config.get(ConfigKey.SUBTITLE_CODEC.value, "copy")
+
+        flags += ["-c:v", video_codec]
+
+        logging.info("Using video codec for reencoding: %s", video_codec)
+
+        if video_codec in [EncoderType.LIBX264.value, EncoderType.LIBX265.value]:
+            crf = str(mode_config.get("crf", 18))
+            flags += ["-crf", crf, "-preset", preset]
+        elif video_codec == EncoderType.HEVC_NVENC.value:
+            bitrate = mode_config.get("bitrate")
+            if not bitrate:
+                height = self.get_video_height(video_file)
+                bitrate = self.resolve_bitrate(height)
+            flags += ["-b:v", bitrate, "-preset", preset]
+
+        flags += ["-c:a", audio_codec, "-c:s", subtitle_codec]
+        return flags
+
     def build_ffmpeg_command(
         self,
         video_file: Path,
@@ -439,7 +514,7 @@ class VideoProcessor:
         # ✅ GPU acceleration
         if self.config_bundle.mode == ConversionMode.REENCODE:
             if self.use_gpu:
-                logging.info("Using GPU acceleration for reencoding: %s", EncoderType.H264_NVENC.value)
+                logging.info("Using GPU acceleration for reencoding")
                 cmd += ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
             else:
                 logging.info("No GPU detected, using CPU for reencoding")
@@ -459,36 +534,21 @@ class VideoProcessor:
         for sub_map in subtitle_maps:
             cmd += ["-map", sub_map]
 
+        mode_config = self.config.get(self.config_bundle.mode.value, {})
+
         # ✅ Codec settings
         if self.config_bundle.mode == ConversionMode.REMUX:
-            mode_config = self.config.get(ConversionMode.REMUX.value, {})
-            video_codec = mode_config.get(ConfigKey.VIDEO_CODEC.value, "copy")
-            audio_codec = mode_config.get(ConfigKey.AUDIO_CODEC.value, "copy")
-            subtitle_codec = mode_config.get(ConfigKey.SUBTITLE_CODEC.value, "copy")
-
-            cmd += ["-c:v", video_codec, "-c:a", audio_codec, "-c:s", subtitle_codec]
+            cmd += self._build_remux_codec_flags(mode_config)
 
         elif self.config_bundle.mode == ConversionMode.REENCODE:
-            mode_config = self.config.get(ConversionMode.REENCODE.value, {})
-            video_codec = EncoderType.H264_NVENC.value if self.use_gpu else mode_config.get(ConfigKey.VIDEO_CODEC.value, EncoderType.LIBX264.value)
-            preset = self.resolve_preset(video_codec, mode_config.get(ConfigKey.PRESET.value, PresetLibxSpeed.MEDIUM.value))
-            audio_codec = mode_config.get(ConfigKey.AUDIO_CODEC.value, "copy")
-            subtitle_codec = mode_config.get(ConfigKey.SUBTITLE_CODEC.value, "copy")
+            pix_fmt = self.get_pixel_format(video_file)
+            is_10bit = "10" in pix_fmt or "p010" in pix_fmt
 
-            cmd += ["-c:v", video_codec]
+            if is_10bit:
+                pixel_format = PixelFormat.P010LE.value if self.use_gpu else PixelFormat.YUV420P10LE.value
+                cmd += ["-pix_fmt", pixel_format]
 
-            if video_codec == EncoderType.LIBX264.value:
-                crf = str(mode_config.get("crf", 18))
-                cmd += ["-crf", crf, "-preset", preset]
-
-            elif video_codec == EncoderType.H264_NVENC.value:
-                bitrate = mode_config.get("bitrate")
-                if not bitrate:
-                    height = self.get_video_height(video_file)
-                    bitrate = self.resolve_bitrate(height)
-                cmd += ["-b:v", bitrate, "-preset", preset]
-
-            cmd += ["-c:a", audio_codec, "-c:s", subtitle_codec]
+            cmd += self._build_reencode_codec_flags(video_file, mode_config)
 
         else:
             raise ValueError(f"Unsupported conversion_mode: {self.config_bundle.mode}")
@@ -695,6 +755,35 @@ class VideoProcessor:
         data = json.loads(result.stdout)
         return data["streams"][0]["height"]
 
+    def get_pixel_format(self, input_path: Path) -> str:
+        """
+        Extracts the pixel format of the primary video stream from a media file using ffprobe.
+
+        This method runs ffprobe as a subprocess to query the pixel format (e.g., 'yuv420p', 'yuv420p10le', 'p010le')
+        of the first video stream in the specified media file. The result is used to determine bit depth and guide
+        codec selection during reencoding.
+
+        Args:
+            input_path (Path): Path to the input media file.
+
+        Returns:
+            str: The pixel format string reported by ffprobe.
+
+        Logs:
+            Logs the detected pixel format for traceability and audit purposes.
+        """
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=pix_fmt",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(input_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        pix_fmt = result.stdout.strip()
+        logging.info("Detected pixel format for %s: %s", input_path.name, pix_fmt)
+        return pix_fmt
+
     def resolve_bitrate(self, height: int) -> str:
         """
         Resolves a recommended bitrate based on video height.
@@ -734,7 +823,7 @@ class VideoProcessor:
             PresetLibxSpeed.SLOWER.value: PresetNvencSpeed.P6.value,
             PresetLibxSpeed.VERYSLOW.value: PresetNvencSpeed.P7.value
         }
-        if codec == EncoderType.H264_NVENC.value:
+        if codec == EncoderType.HEVC_NVENC.value:
             return nvenc_presets.get(preset, PresetLibxSpeed.FASTER.value)
         return preset  # libx264 or others
 
