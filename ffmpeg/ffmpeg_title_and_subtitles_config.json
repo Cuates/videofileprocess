@@ -5,7 +5,7 @@
     "output_extension": ".mkv",
     "conversion_mode": "remux",
     "reencode": {
-        "video_codec": "libx264",
+        "video_codec": "libx265",
         "crf": 18,
         "preset": "faster",
         "audio_codec": "copy",
