@@ -1,0 +1,19 @@
+{
+    "input_directories": [""],
+    "file_extensions": ["mkv", "mp4", "mov", "avi", "ogm", "wmv"],
+    "subtitle_tracks": "ang,eng,enm,zxx,und",
+    "output_extension": ".mkv",
+    "conversion_mode": "remux",
+    "reencode": {
+        "video_codec": "libx265",
+        "crf": 18,
+        "preset": "faster",
+        "audio_codec": "copy",
+        "subtitle_codec": "copy"
+    },
+    "remux": {
+        "video_codec": "copy",
+        "audio_codec": "copy",
+        "subtitle_codec": "copy"
+    }
+}
