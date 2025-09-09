@@ -5,7 +5,7 @@ This script scans configured directories for video files, filters subtitle strea
 based on language, removes title metadata, and either remuxes or reencodes the media
 based on configuration. It supports GPU acceleration (CUDA) for reencoding when available.
 
-Features:
+Key Features:
 - Config-driven input/output behavior
 - Subtitle stream filtering by language
 - Title metadata removal
@@ -13,25 +13,12 @@ Features:
 - GPU acceleration detection
 - Structured logging (text + JSON)
 - CPU load-aware processing
-- Modular, auditable design
+- Modular, auditable design with fallback logic
 
-Dependencies:
+Requirements:
 - Python 3.8+
-- Required Python libraries:
-    - json
-    - logging
-    - subprocess
-    - time
-    - sys
-    - shutil
-    - pathlib
-    - datetime
-    - typing
-    - psutil (install via `pip install psutil`)
-- Required system tools:
-    - ffmpeg
-    - ffprobe
-    - nvidia-smi (optional, for GPU detection)
+- Python libraries: json, logging, subprocess, time, sys, shutil, pathlib, datetime, typing, psutil
+- System tools: ffmpeg, ffprobe, mkvmerge, nvidia-smi (optional)
 
 Usage:
     Configure the JSON file with required keys and run the script.
@@ -93,8 +80,7 @@ class PresetLibxSpeed(Enum):
     """
     Enum representing libx264 preset speeds and compression tradeoffs.
 
-    Options range from ULTRAFAST (fastest, worst compression)
-    to VERYSLOW (slowest, best compression).
+    Options range from ULTRAFAST (fastest, worst compression) to VERYSLOW (slowest, best compression).
     """
     ULTRAFAST = "ultrafast" # Speed fastest, Compression worst
     SUPERFAST = "superfast" # Speed very fastest, Compression poor
@@ -110,8 +96,7 @@ class PresetNvencSpeed(Enum):
     """
     Enum representing NVIDIA NVENC preset speeds and quality levels.
 
-    Options range from P1 (fastest, lowest quality)
-    to P7 (slowest, highest quality).
+    Options range from P1 (fastest, lowest quality) to P7 (slowest, highest quality).
     """
     P1 = "p1" # Quality lowest, Speed fastest
     P2 = "p2" # Quality lower, Speed very fast
@@ -156,9 +141,7 @@ class ScriptMeta:
         directory (Path): Directory containing the script.
         filename (str): Stem name of the script file, without extension.
 
-    This class is used to group script-level metadata for logging,
-    audit trails, and path resolution. It is frozen to ensure
-    consistency and prevent accidental mutation.
+    Used for logging, audit trails, and path resolution. Frozen to ensure consistency.
     """
     path: Path
     directory: Path
@@ -167,18 +150,16 @@ class ScriptMeta:
 @dataclass
 class ConfigBundle:
     """
-    Structured container for validated configuration parameters
-    used in media processing workflows.
+    Structured container for validated configuration parameters.
 
     Attributes:
-        input_dirs (List[Path]): List of directories to scan for input media files.
-        file_exts (List[str]): Allowed file extensions for input media (e.g., ['.mkv', '.mp4']).
-        subtitle_langs (List[str]): Desired subtitle languages to retain (e.g., ['eng', 'spa']).
-        output_ext (str): Target file extension for output media (e.g., '.mkv').
-        mode (ConversionMode): Processing mode (e.g., REMUX, CONVERT) as defined by the enum.
+        input_dirs (List[Path]): Directories to scan for input media files.
+        file_exts (List[str]): Allowed file extensions (e.g., ['.mkv', '.mp4']).
+        subtitle_langs (List[str]): Subtitle languages to retain (e.g., ['eng', 'spa']).
+        output_ext (str): Target extension for output media (e.g., '.mkv').
+        mode (ConversionMode): Processing mode (REMUX or REENCODE).
 
-    This class encapsulates config-derived values for traceability,
-    validation, and centralized access throughout the pipeline.
+    Centralizes config values for traceability and pipeline consistency.
     """
     input_dirs: List[Path]
     file_exts: List[str]
@@ -198,6 +179,7 @@ class VideoProcessor:
     - Build and execute FFmpeg commands
     - Log results to text and JSON
     - Handle CPU load and system readiness
+    - Provide fallback logic and audit summaries
     """
     def __init__(self, config_path: Path) -> None:
         """
@@ -212,7 +194,7 @@ class VideoProcessor:
             filename=Path(__file__).resolve().stem
         )
 
-        self.setup_logging()
+        self._setup_logging()
 
         config: Dict[str, Union[str, List[str]]] = self.load_config(config_path)
         mode_str: str = config.get(ConfigKey.CONVERSION_MODE.value, "").lower()
@@ -292,9 +274,11 @@ class VideoProcessor:
             logging.error("Configuration validation failed: %s", str(validation_error))
             raise ValueError(f"Configuration validation error: {validation_error}") from validation_error
 
-    def setup_logging(self) -> None:
+    def _setup_logging(self) -> None:
         """
-        Sets up rotating file and console logging for the script.
+        Initializes rotating file and console logging.
+
+        Creates a log file in the script directory and configures output format.
         """
         log_file = self.meta.directory / f"{self.meta.filename}.log"
         handler = RotatingFileHandler(log_file, maxBytes=10**6, backupCount=5)
@@ -354,14 +338,12 @@ class VideoProcessor:
                     lang = lang.strip().lower()
                 elif len(parts) == 1:
                     index = parts[0].strip()
-                    lang = "und"  # ✅ Treat missing language as undetermined
+                    lang = "und" # ✅ Treat missing language as undetermined
                 else:
                     continue  # Unexpected format
 
                 if lang in allowed_langs:
                     maps.append(f"0:{index}")
-                # else:
-                #     print(f"Excluded subtitle stream {index} ({lang})")
 
             return maps
 
@@ -372,26 +354,28 @@ class VideoProcessor:
             logging.warning("OS error while running ffprobe on %s: %s", video_file.name, e)
             return []
 
-    def wait_for_cpu(self, threshold: int = 50) -> None:
+    def _wait_for_cpu(self, threshold: int = 50) -> None:
         """
-        Waits until CPU usage drops below a threshold before processing.
+        Pauses execution until CPU usage drops below a threshold.
 
         Args:
-            threshold (int): CPU usage percentage threshold.
+            threshold (int): CPU usage percentage threshold (default: 50).
         """
         while psutil.cpu_percent(interval=1) > threshold:
             logging.info("CPU busy, waiting...")
             time.sleep(5)
 
-    def get_output_path(self, video_file: Path) -> Path:
+    def _get_output_path(self, video_file: Path) -> Path:
         """
-        Constructs the output path for the processed video file.
+        Generates the output path for a processed video file.
+
+        Creates a 'processed_files' subdirectory if it doesn't exist.
 
         Args:
-            video_file (Path): Path to the input video file.
+            video_file (Path): Input video file path.
 
         Returns:
-            Path: Path to the output file in the 'processed_files' subdirectory.
+            Path: Output file path.
         """
         output_dir = video_file.parent / PROCESSED_FILES_DIR
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -483,7 +467,7 @@ class VideoProcessor:
 
         This method constructs stream copy directives for video, audio, and subtitle streams,
         using values from the provided configuration. If no explicit codec is defined, it defaults
-    to 'copy', preserving the original encoding without reprocessing.
+        to 'copy', preserving the original encoding without reprocessing.
 
         Args:
             mode_config (dict): Dictionary containing codec preferences for remuxing.
@@ -518,7 +502,7 @@ class VideoProcessor:
         """
         flags = []
         video_codec = EncoderType.HEVC_NVENC.value if self.use_gpu else mode_config.get(ConfigKey.VIDEO_CODEC.value, EncoderType.LIBX265.value)
-        preset = self.resolve_preset(video_codec, mode_config.get(ConfigKey.PRESET.value, PresetLibxSpeed.MEDIUM.value))
+        preset = self._resolve_preset(video_codec, mode_config.get(ConfigKey.PRESET.value, PresetLibxSpeed.MEDIUM.value))
         audio_codec = mode_config.get(ConfigKey.AUDIO_CODEC.value, "copy")
         subtitle_codec = mode_config.get(ConfigKey.SUBTITLE_CODEC.value, "copy")
 
@@ -533,14 +517,7 @@ class VideoProcessor:
             bitrate = mode_config.get("bitrate")
             if not bitrate:
                 height = self.get_video_height(video_file)
-                bitrate = self.resolve_bitrate(height)
-                # try:
-                #     height = self.get_video_height(video_file)
-                #     bitrate = self.resolve_bitrate(height)
-                # except (KeyError, IndexError, TypeError, ValueError, RuntimeError) as err:
-                #     logging.error("Could not determine video height for %s: %s", video_file.name, err)
-                #     self.write_or_append_to_json(f"Height detection failed for {video_file.name}: {err}", is_success=False)
-                #     return []
+                bitrate = self._resolve_bitrate(height)
 
             flags += ["-b:v", bitrate, "-preset", preset]
 
@@ -730,9 +707,9 @@ class VideoProcessor:
             video_file (Path): Path to the video file.
         """
         try:
-            self.wait_for_cpu()
+            self._wait_for_cpu()
             subtitle_maps = self.get_matching_subtitle_maps(video_file)
-            output_file = self.get_output_path(video_file)
+            output_file = self._get_output_path(video_file)
             title = video_file.stem
             cmd = self.build_ffmpeg_command(video_file, output_file, subtitle_maps, title)
             self.run_ffmpeg(cmd, video_file, output_file)
@@ -777,7 +754,7 @@ class VideoProcessor:
                             f"Error processing directory {input_dir}: {os_error}",
                             is_success=False
                         )
-                # logging.info("Check success and or error file(s) if any were generated")
+
                 self.summarize_failures()
         else:
             logging.error("Exiting script due to missing executables.")
@@ -843,8 +820,6 @@ class VideoProcessor:
         except json.JSONDecodeError as exc:
             self.reencode_failures.append(input_path.name)
             raise RuntimeError(f"Invalid JSON from ffprobe: {exc}") from exc
-        # data = json.loads(result.stdout)
-        # return data["streams"][0]["height"]
 
     def get_pixel_format(self, input_path: Path) -> str:
         """
@@ -872,7 +847,7 @@ class VideoProcessor:
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         pix_fmt = result.stdout.strip()
-        # logging.info("Detected pixel format for %s: %s", input_path.name, pix_fmt)
+
         if pix_fmt:
             logging.info("Detected pixel format for %s: %s", input_path.name, pix_fmt)
         else:
@@ -880,15 +855,15 @@ class VideoProcessor:
 
         return pix_fmt
 
-    def resolve_bitrate(self, height: int) -> str:
+    def _resolve_bitrate(self, height: int) -> str:
         """
-        Resolves a recommended bitrate based on video height.
+        Determines recommended video bitrate based on resolution height.
 
         Args:
-            height (int): Height of the video in pixels.
+            height (int): Video height in pixels.
 
         Returns:
-            str: Bitrate string suitable for FFmpeg (e.g., '8M').
+            str: Bitrate string for FFmpeg (e.g., '8M').
         """
         if height <= 720:
             return "5M"
@@ -898,16 +873,16 @@ class VideoProcessor:
             return "15M"
         return "30M"
 
-    def resolve_preset(self, codec: str, preset: str) -> str:
+    def _resolve_preset(self, codec: str, preset: str) -> str:
         """
-        Resolves the appropriate preset for the given codec.
+        Maps generic preset names to codec-specific values.
 
         Args:
-            codec (str): Video codec name.
-            preset (str): Desired preset name.
+            codec (str): Codec name (e.g., 'hevc_nvenc').
+            preset (str): Generic preset name.
 
         Returns:
-            str: Resolved preset string for FFmpeg.
+            str: Codec-specific preset value.
         """
         nvenc_presets = {
             PresetLibxSpeed.ULTRAFAST.value: PresetNvencSpeed.P1.value,
