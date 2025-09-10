@@ -297,7 +297,7 @@ class VideoProcessor:
         """
         try:
             subprocess.run(["nvidia-smi"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-            result = subprocess.run(["ffmpeg", "-hwaccels"], capture_output=True, text=True, check=False)
+            result = subprocess.run(["ffmpeg", "-hwaccels"], capture_output=True, text=True, check=False, encoding='utf-8')
             return "cuda" in result.stdout.lower()
         except subprocess.SubprocessError as e:
             logging.warning("Subprocess error during GPU detection: %s", e)
@@ -323,7 +323,7 @@ class VideoProcessor:
                     "-show_entries", "stream=index:stream_tags=language",
                     "-of", "csv=p=0", str(video_file)
                 ],
-                capture_output=True, text=True, check=False
+                capture_output=True, text=True, check=False, encoding='utf-8'
             )
 
             allowed_langs = {lang.strip().lower() for lang in self.config_bundle.subtitle_langs}
@@ -401,7 +401,7 @@ class VideoProcessor:
         ]
 
         try:
-            subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
 
             # Validate output file
             if output_path.exists() and output_path.stat().st_size > 0:
@@ -605,7 +605,7 @@ class VideoProcessor:
         logging.info("Processing %s...", video_file.name)
 
         try:
-            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
             logging.info("Removed title and non-English subtitles from %s", video_file.name)
             logging.info("Saved as %s", output_file.name)
             self.write_or_append_to_json(f"Processed {video_file.name}", is_success=True)
@@ -806,7 +806,7 @@ class VideoProcessor:
             "-show_entries", "stream=height",
             "-of", "json", input_path
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False, encoding='utf-8')
         try:
             data = json.loads(result.stdout)
             if "streams" not in data or not data["streams"]:
@@ -845,7 +845,7 @@ class VideoProcessor:
             "-of", "default=noprint_wrappers=1:nokey=1",
             str(input_path)
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False, encoding='utf-8')
         pix_fmt = result.stdout.strip()
 
         if pix_fmt:
