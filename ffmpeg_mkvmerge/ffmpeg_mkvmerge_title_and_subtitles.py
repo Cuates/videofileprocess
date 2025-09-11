@@ -63,19 +63,6 @@ class EncoderType(Enum):
     H264_NVENC = "h264_nvenc"
     HEVC_NVENC = "hevc_nvenc"
 
-class PixelFormat(Enum):
-    """
-    Enum representing common pixel formats.
-
-    Options:
-        YUV420P: Standard 8-bit 4:2:0 planar YUV.
-        YUV420P10LE: 10-bit 4:2:0 planar YUV, little-endian.
-        P010LE: 10-bit 4:2:0 NVENC-compatible pixel format, little-endian.
-    """
-    YUV420P = "yuv420p"
-    YUV420P10LE = "yuv420p10le"
-    P010LE = "p010le"
-
 class PresetLibxSpeed(Enum):
     """
     Enum representing libx264 preset speeds and compression tradeoffs.
@@ -575,13 +562,6 @@ class VideoProcessor:
             cmd += self._build_remux_codec_flags(mode_config)
 
         elif self.config_bundle.mode == ConversionMode.REENCODE:
-            pix_fmt = self.get_pixel_format(video_file)
-            is_10bit = "10" in pix_fmt or "p010" in pix_fmt
-
-            if is_10bit:
-                pixel_format = PixelFormat.P010LE.value if self.use_gpu else PixelFormat.YUV420P10LE.value
-                cmd += ["-pix_fmt", pixel_format]
-
             cmd += self._build_reencode_codec_flags(video_file, mode_config)
 
         else:
@@ -820,40 +800,6 @@ class VideoProcessor:
         except json.JSONDecodeError as exc:
             self.reencode_failures.append(input_path.name)
             raise RuntimeError(f"Invalid JSON from ffprobe: {exc}") from exc
-
-    def get_pixel_format(self, input_path: Path) -> str:
-        """
-        Extracts the pixel format of the primary video stream from a media file using ffprobe.
-
-        This method runs ffprobe as a subprocess to query the pixel format (e.g., 'yuv420p', 'yuv420p10le', 'p010le')
-        of the first video stream in the specified media file. The result is used to determine bit depth and guide
-        codec selection during reencoding.
-
-        Args:
-            input_path (Path): Path to the input media file.
-
-        Returns:
-            str: The pixel format string reported by ffprobe.
-
-        Logs:
-            Logs the detected pixel format for traceability and audit purposes.
-        """
-        cmd = [
-            "ffprobe", "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=pix_fmt",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            str(input_path)
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False, encoding='utf-8')
-        pix_fmt = result.stdout.strip()
-
-        if pix_fmt:
-            logging.info("Detected pixel format for %s: %s", input_path.name, pix_fmt)
-        else:
-            logging.error("No pixel format detected for %s", input_path.name)
-
-        return pix_fmt
 
     def _resolve_bitrate(self, height: int) -> str:
         """
